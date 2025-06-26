@@ -1,0 +1,7 @@
+.popup {
+    width: 430px;
+    background-color: var(--colorBackgroundOverlay); 
+    color: var(--colorNeutralForeground1);
+    padding: 16px;
+}
+  
