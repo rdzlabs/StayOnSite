@@ -1,9 +1,9 @@
+// Checks if a string is a valid HTTP/HTTPS URL
 export const isValidUrl = (url: string): boolean => {
-    try {
-      const u = new URL(url);
-      return !!u.protocol.startsWith("http");
-    } catch {
-      return false;
-    }
-  };
-  
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol.startsWith("http");
+  } catch {
+    return false;
+  }
+};

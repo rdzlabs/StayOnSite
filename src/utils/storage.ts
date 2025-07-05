@@ -1,85 +1,78 @@
 import { isValidUrl } from "./validation";
+
+// Keys
 const CURRENT_URL_KEY = "currentTargetUrl";
+const ACTIVATE_KEY = "activate";
+const SHOW_SITE_KEY = "showSite";
+const BOOKMARK_KEY = "stayOnSiteBookmarks";
 
-export const saveCurrentUrl = async (url: string): Promise<void> => {
+// --- Core Promisified Helpers ---
+
+function getFromStorage<T>(key: string): Promise<T | null> {
   return new Promise((resolve, reject) => {
-    chrome.storage.local.set({ [CURRENT_URL_KEY]: url }, () => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError);
-      } else {
-        resolve();
-      }
+    chrome.storage.local.get([key], (result) => {
+      if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+      else resolve(result[key] ?? null);
     });
   });
-};
+}
 
-export const getCurrentUrl = async (): Promise<string | null> => {
+function setToStorage<T>(key: string, value: T): Promise<void> {
   return new Promise((resolve, reject) => {
-    chrome.storage.local.get([CURRENT_URL_KEY], (result) => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError);
-      } else {
-        resolve(result[CURRENT_URL_KEY] || null);
-      }
+    chrome.storage.local.set({ [key]: value }, () => {
+      if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+      else resolve();
     });
   });
-};
+}
 
-export const clearCurrentUrl = async (): Promise<void> => {
+function removeFromStorage(key: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    chrome.storage.local.remove([CURRENT_URL_KEY], () => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError);
-      } else {
-        resolve();
-      }
+    chrome.storage.local.remove([key], () => {
+      if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+      else resolve();
     });
   });
-};
+}
+
+// --- Current Target URL ---
+
+export const saveCurrentUrl = (url: string) => setToStorage(CURRENT_URL_KEY, url);
+
+export const getCurrentUrl = () => getFromStorage<string>(CURRENT_URL_KEY);
+
+export const clearCurrentUrl = () => removeFromStorage(CURRENT_URL_KEY);
+
+// --- Activation Flag ---
 
 export const setActivate = (value: boolean): void => {
-  chrome.storage.local.set({ activate: value });
+  chrome.storage.local.set({ [ACTIVATE_KEY]: value });
 };
 
-export const getActivate = (): Promise<boolean> => {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(["activate"], (result) => {
-      resolve(result.activate ?? false);
-    });
-  });
+export const getActivate = (): Promise<boolean> =>
+  getFromStorage<boolean>(ACTIVATE_KEY).then((val) => val ?? false);
+
+// --- Show Site Flag ---
+
+export const setShowSite = (flag: boolean): void => {
+  chrome.storage.local.set({ [SHOW_SITE_KEY]: flag });
 };
+
+export const getShowSite = (): Promise<boolean> =>
+  getFromStorage<boolean>(SHOW_SITE_KEY).then((val) => val ?? false);
+
+// --- Bookmarks ---
 
 export const saveBookmark = async (newBookmark: { name: string; url: string }) => {
   if (!isValidUrl(newBookmark.url)) return;
-
-  chrome.storage.local.set({
-    stayOnSiteBookmarks: [newBookmark], // replaces existing as per your request
-  });
+  await setToStorage(BOOKMARK_KEY, [newBookmark]); // overwrites existing
 };
 
-export const getBookmark = (): Promise<{ name: string; url: string }[]> => {
-  return new Promise((resolve) => {
-    chrome.storage.local.get("stayOnSiteBookmarks", (result) => {
-      resolve(result.stayOnSiteBookmarks || []);
-    });
-  });
-};
+export const getBookmark = (): Promise<{ name: string; url: string }[]> =>
+  getFromStorage<{ name: string; url: string }[]>(BOOKMARK_KEY).then((val) => val ?? []);
 
-export const deleteBookmark = async (nameToDelete: string) => {
+export const deleteBookmark = async (nameToDelete: string): Promise<void> => {
   const existing = await getBookmark();
-  const updated = existing.filter(b => b.name !== nameToDelete);
-  chrome.storage.local.set({ stayOnSiteBookmarks: updated });
+  const updated = existing.filter((b) => b.name !== nameToDelete);
+  await setToStorage(BOOKMARK_KEY, updated);
 };
-
-// persist the “show site” flag
-export const setShowSite = (flag: boolean): void => {
-  chrome.storage.local.set({ showSite: flag });
-};
-
-// read it back (defaults to false)
-export const getShowSite = (): Promise<boolean> =>
-  new Promise((resolve) => {
-    chrome.storage.local.get(["showSite"], (res) => {
-      resolve(res.showSite ?? false);
-    });
-  });

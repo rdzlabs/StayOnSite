@@ -1,7 +1,14 @@
-import React, { useState } from "react";
-import { makeStyles, Field, Input, InfoLabel, LabelProps, Button, Subtitle2Stronger, Switch, Accordion, AccordionHeader, AccordionItem, AccordionPanel, Divider } from "@fluentui/react-components";
+import { 
+    makeStyles, 
+    Field, 
+    InfoLabel, 
+    Accordion, 
+    AccordionHeader, 
+    AccordionItem, 
+    AccordionPanel, 
+    Divider 
+} from "@fluentui/react-components";
 import { QuickTargetBox } from "./QuickTargetBox";
-import { BookmarksBox } from "./BookmarksBox";
 import { SaveBookmarksBox } from "./SaveBookmarksBox";
 
 const useStyles = makeStyles({
