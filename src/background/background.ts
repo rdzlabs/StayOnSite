@@ -1,8 +1,14 @@
 import { cleanTabs } from "./tabManager.js";
 import { getActivate, getShowSite, getCurrentUrl } from "../utils/storage.js";
+import {
+  normalizeUrl,
+  closeNonMatchingTabs,
+  queryAllTabs,
+} from "./tabUtils.js";
 
 let isEnforcing = false;
 
+// Handle incoming extension messages
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === "cleanTabs") {
     cleanTabs().then(() => sendResponse({ status: "done" }));
@@ -10,70 +16,54 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.action === "activateFiltering") {
-    Promise.all([getActivate(), getShowSite(), getCurrentUrl()])
-      .then(([isActive, showSite, rawUrl]) => {
-        if (!isActive || !showSite) {
-          sendResponse({ status: "inactive" });
-          return;
-        }
+    (async () => {
+      const [isActive, showSite, rawUrl] = await Promise.all([
+        getActivate(),
+        getShowSite(),
+        getCurrentUrl(),
+      ]);
 
-        if (!rawUrl) {
-          sendResponse({ status: "no-url" });
-          return;
-        }
+      if (!isActive || !showSite) {
+        sendResponse({ status: "inactive" });
+        return;
+      }
 
-        const targetUrl = rawUrl.endsWith("/") ? rawUrl : rawUrl + "/";
+      if (!rawUrl) {
+        sendResponse({ status: "no-url" });
+        return;
+      }
 
-        chrome.tabs.query({}, (tabs) => {
-          const hasTargetTab = tabs.some(
-            (tab) => tab.url && tab.url.startsWith(targetUrl)
-          );
+      const targetUrl = normalizeUrl(rawUrl);
+      const tabs = await queryAllTabs();
 
-          if (!hasTargetTab) {
-            chrome.tabs.create({ url: targetUrl, active: true }, (newTab) => {
-              setTimeout(() => {
-                chrome.tabs.query({}, (allTabs) => {
-                  for (const tab of allTabs) {
-                    if (
-                      tab.id !== newTab.id &&
-                      tab.url &&
-                      tab.id != null
-                    ) {
-                      chrome.tabs.remove(tab.id);
-                    }
-                  }
-                  sendResponse({ status: "done" });
-                });
-              }, 1000);
-            });
-            return;
-          }
+      const hasTargetTab = tabs.some((tab) => tab.url?.startsWith(targetUrl));
 
-          for (const tab of tabs) {
-            if (tab.url && !tab.url.startsWith(targetUrl) && tab.id != null) {
-              chrome.tabs.remove(tab.id);
-            }
-          }
-
-          sendResponse({ status: "done" });
+      if (!hasTargetTab) {
+        chrome.tabs.create({ url: targetUrl, active: true }, (newTab) => {
+          setTimeout(async () => {
+            const allTabs = await queryAllTabs();
+            closeNonMatchingTabs(allTabs, targetUrl, newTab.id);
+            sendResponse({ status: "done" });
+          }, 1000);
         });
-      });
+        return;
+      }
+
+      closeNonMatchingTabs(tabs, targetUrl);
+      sendResponse({ status: "done" });
+    })();
 
     return true;
   }
 });
 
-// periodic enforcement
+// Periodically enforce tab filtering every second
 setInterval(async () => {
   if (isEnforcing) return;
   isEnforcing = true;
 
-  const [isActive, showSite] = await Promise.all([
-    getActivate(),
-    getShowSite(),
-  ]);
-
-  if (!isActive) {
+  const [isActive, showSite] = await Promise.all([getActivate(), getShowSite()]);
+  if (!isActive || !showSite) {
     isEnforcing = false;
     return;
   }
@@ -84,44 +74,27 @@ setInterval(async () => {
     return;
   }
 
-  const targetUrl = rawUrl.endsWith("/") ? rawUrl : rawUrl + "/";
+  const targetUrl = normalizeUrl(rawUrl);
+  const tabs = await queryAllTabs();
 
-  chrome.tabs.query({}, (tabs) => {
-    if (tabs.length === 1) {
-      isEnforcing = false;
-      return;
-    }
-
-    const hasTargetTab = tabs.some(
-      (tab) => tab.url && tab.url.startsWith(targetUrl)
-    );
-
-    if (!hasTargetTab) {
-      chrome.tabs.create({ url: targetUrl, active: true }, (newTab) => {
-        setTimeout(() => {
-          chrome.tabs.query({}, (allTabs) => {
-            for (const tab of allTabs) {
-              if (
-                tab.id !== newTab.id &&
-                tab.url &&
-                tab.id != null
-              ) {
-                chrome.tabs.remove(tab.id);
-              }
-            }
-            isEnforcing = false;
-          });
-        }, 1000);
-      });
-      return;
-    }
-
-    for (const tab of tabs) {
-      if (tab.url && !tab.url.startsWith(targetUrl) && tab.id != null) {
-        chrome.tabs.remove(tab.id);
-      }
-    }
-
+  if (tabs.length === 1) {
     isEnforcing = false;
-  });
-}, 1000); // 1 second interval to prevent overload
+    return;
+  }
+
+  const hasTargetTab = tabs.some((tab) => tab.url?.startsWith(targetUrl));
+
+  if (!hasTargetTab) {
+    chrome.tabs.create({ url: targetUrl, active: true }, (newTab) => {
+      setTimeout(async () => {
+        const allTabs = await queryAllTabs();
+        closeNonMatchingTabs(allTabs, targetUrl, newTab.id);
+        isEnforcing = false;
+      }, 100);
+    });
+    return;
+  }
+
+  closeNonMatchingTabs(tabs, targetUrl);
+  isEnforcing = false;
+}, 100);

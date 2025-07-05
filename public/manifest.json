@@ -5,8 +5,7 @@
   "description": "Keep your browsing focused on a single site.",
   "permissions": [
     "storage",
-    "tabs",
-    "notifications"
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"
